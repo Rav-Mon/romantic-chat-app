@@ -1,4 +1,4 @@
-const socket = io('https://your-backend-url.onrender.com'); // Replace with Render backend URL after deployment
+const socket = io('https://romantic-chat-app.onrender.com'); // Replace with Render backend URL after deployment
 let peer = null;
 let currentCall = null;
 let callTimerInterval = null;
