@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rav ❤️ Mon's Romantic Chat</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Rav ❤️ Mon</h1>
+      <div class="user-status">
+        <span id="rav-status" class="status offline">Rav: Offline</span>
+        <span id="mon-status" class="status offline">Mon: Offline</span>
+      </div>
+    </header>
+    <div id="login-screen">
+      <button onclick="login('Rav')">Login as Rav</button>
+      <button onclick="login('Mon')">Login as Mon</button>
+    </div>
+    <div id="chat-screen" style="display: none;">
+      <div id="profile-setup">
+        <img id="profile-pic" src="default.png" alt="Profile Picture">
+        <input type="file" id="profile-pic-input" accept="image/*">
+      </div>
+      <div id="messages"></div>
+      <div class="input-area">
+        <input type="text" id="message-input" placeholder="Type a message...">
+        <input type="file" id="file-input">
+        <button onclick="sendMessage()">Send</button>
+      </div>
+      <div class="call-controls">
+        <button onclick="startCall('voice')">Voice Call</button>
+        <button onclick="startCall('video')">Video Call</button>
+      </div>
+      <div id="call-screen" style="display: none;">
+        <video id="local-video" autoplay muted></video>
+        <video id="remote-video" autoplay></video>
+        <div id="call-timer">00:00</div>
+        <button onclick="endCall()">End Call</button>
+      </div>
+      <div id="incoming-call" style="display: none;">
+        <p>Incoming <span id="call-type"></span> Call from <span id="caller"></span></p>
+        <button onclick="acceptCall()">Accept</button>
+        <button onclick="rejectCall()">Reject</button>
+      </div>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
