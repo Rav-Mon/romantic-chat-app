@@ -1,5 +1,5 @@
 let username = null;
-const socket = io('https://romantic-chat-app.onrender.com', { transports: ['websocket'] }); // Your Render backend URL
+const socket = io('https://romantic-chat-app.onrender.com', { transports: ['websocket'] });
 let peer = null;
 let currentCall = null;
 let callTimerInterval = null;
@@ -86,10 +86,13 @@ function initPeer() {
         }
       ]
     },
-    debug: 3 // Enable detailed PeerJS logs
+    secure: true,
+    debug: 3
   });
+
   peer.on('open', id => {
     console.log('PeerJS ID:', id);
+    socket.emit('peer-id', id);
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(s => {
         stream = s;
@@ -130,7 +133,6 @@ function initPeer() {
 function startCall(type) {
   const to = username === 'Rav' ? 'Mon' : 'Rav';
   console.log(`Starting ${type} call to ${to}`);
-  socket.emit('call-user', { to, type });
   callScreen.style.display = 'flex';
   if (type === 'voice') {
     localVideo.style.display = 'none';
@@ -139,20 +141,59 @@ function startCall(type) {
     localVideo.style.display = 'block';
     remoteVideo.style.display = 'block';
   }
+  const call = peer.call(to, stream);
+  currentCall = call;
+  call.on('stream', remoteStream => {
+    console.log('Received remote stream');
+    remoteVideo.srcObject = remoteStream;
+    remoteStream.getAudioTracks().forEach(track => track.enabled = true);
+    remoteStream.getVideoTracks().forEach(track => track.enabled = true);
+    startCallTimer();
+  });
+  call.on('error', err => console.error('WebRTC call error:', err));
+  call.on('close', () => {
+    console.log('Call closed');
+    endCall();
+  });
+  call.peerConnection.onicecandidate = event => {
+    if (event.candidate) {
+      socket.emit('ice-candidate', { to, candidate: event.candidate });
+    }
+  };
+  call.peerConnection.createOffer()
+    .then(offer => call.peerConnection.setLocalDescription(offer))
+    .then(() => {
+      socket.emit('call-user', { to, type, offer: call.peerConnection.localDescription });
+    });
 }
 
-socket.on('incoming-call', ({ from, username: caller, type }) => {
+socket.on('incoming-call', ({ from, username: caller, type, offer }) => {
   console.log(`Incoming ${type} call from ${caller}`);
   incomingCallDiv.style.display = 'block';
   callTypeSpan.textContent = type;
   callerSpan.textContent = caller;
   incomingCallDiv.dataset.from = from;
   incomingCallDiv.dataset.type = type;
+  incomingCallDiv.dataset.offer = JSON.stringify(offer);
+});
+
+socket.on('call-answered', ({ answer }) => {
+  if (currentCall) {
+    currentCall.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+  }
+});
+
+socket.on('ice-candidate', ({ candidate }) => {
+  if (currentCall) {
+    currentCall.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+      .catch(err => console.error('Error adding ICE candidate:', err));
+  }
 });
 
 function acceptCall() {
   const from = incomingCallDiv.dataset.from;
   const type = incomingCallDiv.dataset.type;
+  const offer = JSON.parse(incomingCallDiv.dataset.offer);
   console.log(`Accepting ${type} call from ${from}`);
   socket.emit('accept-call', { to: from });
   incomingCallDiv.style.display = 'none';
@@ -166,6 +207,12 @@ function acceptCall() {
   }
   const call = peer.call(from, stream);
   currentCall = call;
+  call.peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
+    .then(() => call.peerConnection.createAnswer())
+    .then(answer => call.peerConnection.setLocalDescription(answer))
+    .then(() => {
+      socket.emit('call-answer', { to: from, answer: call.peerConnection.localDescription });
+    });
   call.on('stream', remoteStream => {
     console.log('Received remote stream on call');
     remoteVideo.srcObject = remoteStream;
@@ -175,6 +222,11 @@ function acceptCall() {
   });
   call.on('error', err => console.error('WebRTC call error:', err));
   call.on('close', () => endCall());
+  call.peerConnection.onicecandidate = event => {
+    if (event.candidate) {
+      socket.emit('ice-candidate', { to: from, candidate: event.candidate });
+    }
+  };
 }
 
 function rejectCall() {
@@ -184,19 +236,7 @@ function rejectCall() {
 }
 
 socket.on('call-accepted', () => {
-  const to = username === 'Rav' ? 'Mon' : 'Rav';
-  console.log(`Call accepted, calling ${to}`);
-  const call = peer.call(to, stream);
-  currentCall = call;
-  call.on('stream', remoteStream => {
-    console.log('Received remote stream on accepted call');
-    remoteVideo.srcObject = remoteStream;
-    remoteStream.getAudioTracks().forEach(track => track.enabled = true);
-    remoteStream.getVideoTracks().forEach(track => track.enabled = true);
-    startCallTimer();
-  });
-  call.on('error', err => console.error('WebRTC call error:', err));
-  call.on('close', () => endCall());
+  console.log('Call accepted');
 });
 
 socket.on('call-rejected', () => {
@@ -266,43 +306,43 @@ function sendMessage() {
   }
 }
 
+function displayMessage(message) {
+  const div = document.createElement('div');
+  div.className = `message ${message.user === username ? 'me' : 'other'}`;
+  if (message.text) {
+    const textP = document.createElement('p');
+    textP.textContent = message.text;
+    div.appendChild(textP);
+  }
+  if (message.file) {
+    const link = document.createElement('a');
+    link.href = message.file;
+    link.download = message.fileName;
+    link.textContent = `📎 ${message.fileName}`;
+    link.className = 'file-link';
+    div.appendChild(link);
+  }
+  const timeP = document.createElement('p');
+  timeP.className = 'timestamp';
+  timeP.textContent = new Date(message.timestamp).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: true });
+  div.appendChild(timeP);
+  if (message.user === username) {
+    const deleteSpan = document.createElement('span');
+    deleteSpan.className = 'delete';
+    deleteSpan.textContent = '✖';
+    deleteSpan.onclick = () => socket.emit('delete-message', message.id);
+    div.appendChild(deleteSpan);
+  }
+  messagesDiv.appendChild(div);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
 socket.on('message', message => displayMessage(message));
 
 socket.on('messages-updated', messages => {
   messagesDiv.innerHTML = '';
   messages.forEach(displayMessage);
 });
-
-function displayMessage({ id, username: sender, text, file, fileName, timestamp }) {
-  const div = document.createElement('div');
-  div.className = `message ${sender === username ? 'me' : 'other'}`;
-  if (text) {
-    const textP = document.createElement('p');
-    textP.textContent = text;
-    div.appendChild(textP);
-  }
-  if (file) {
-    const link = document.createElement('a');
-    link.href = file;
-    link.download = fileName;
-    link.textContent = `📎 ${fileName}`;
-    link.className = 'file-link';
-    div.appendChild(link);
-  }
-  const timeP = document.createElement('p');
-  timeP.className = 'timestamp';
-  timeP.textContent = new Date(timestamp).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: true });
-  div.appendChild(timeP);
-  if (sender === username) {
-    const deleteSpan = document.createElement('span');
-    deleteSpan.className = 'delete';
-    deleteSpan.textContent = '✖';
-    deleteSpan.onclick = () => socket.emit('delete-message', id);
-    div.appendChild(deleteSpan);
-  }
-  messagesDiv.appendChild(div);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
-}
 
 socket.on('user-status', users => {
   document.getElementById('rav-status').textContent = users.Rav?.connected ? '🟢' : '🔴';
@@ -313,7 +353,7 @@ if (profilePicInput) {
   profilePicInput.onchange = () => {
     const file = profilePicInput.files[0];
     if (file && file.size > 2 * 1024 * 1024) {
-      alert('File size must be less than 2MB');
+      alert('Image size must be less than 2MB');
       return;
     }
     if (file) {
