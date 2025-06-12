@@ -1,8 +1,8 @@
-const socket = io('https://romantic-chat-app.onrender.com'); // Replace with Render backend URL after deployment
+let username = null;
+const socket = io('https://romantic-chat-backend.onrender.com', { transports: ['websocket'] }); // Replace with your Render backend URL
 let peer = null;
 let currentCall = null;
 let callTimerInterval = null;
-let username = null;
 let stream = null;
 
 const loginScreen = document.getElementById('login-screen');
@@ -19,32 +19,74 @@ const callerSpan = document.getElementById('caller');
 const callTimer = document.getElementById('call-timer');
 const profilePic = document.getElementById('profile-pic');
 const profilePicInput = document.getElementById('profile-pic-input');
+const loginButtons = loginScreen.querySelectorAll('button');
+
+function showConnecting(show) {
+  loginButtons.forEach(btn => btn.disabled = show);
+  const status = document.createElement('p');
+  status.id = 'connection-status';
+  status.textContent = show ? 'Connecting to server...' : '';
+  status.style.color = '#25D366';
+  status.style.textAlign = 'center';
+  if (show) {
+    loginScreen.appendChild(status);
+  } else {
+    const existing = document.getElementById('connection-status');
+    if (existing) existing.remove();
+  }
+}
+
+socket.on('connect', () => {
+  showConnecting(false);
+});
+
+socket.on('connect_error', (err) => {
+  console.error('Socket.IO connection error:', err);
+  showConnecting(false);
+  alert('Failed to connect to server. Please try again.');
+});
 
 function login(user) {
+  showConnecting(true);
   username = user;
   socket.emit('login', username);
 }
 
 socket.on('login-success', ({ username: user, messages }) => {
+  showConnecting(false);
   loginScreen.style.display = 'none';
   chatScreen.style.display = 'flex';
   messages.forEach(displayMessage);
   initPeer();
 });
 
-socket.on('login-failed', () => alert('User already logged in or invalid!'));
+socket.on('login-failed', (message) => {
+  showConnecting(false);
+  alert(message || 'Login failed!');
+});
 
 function initPeer() {
   peer = new Peer({
-    config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        // Add TURN server credentials from Xirsys or another provider
+        // Example: { urls: 'turn:turn.example.com', username: 'user', credential: 'pass' }
+      ]
+    }
   });
   peer.on('open', id => {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(s => {
         stream = s;
         localVideo.srcObject = stream;
+        // Ensure audio tracks are enabled
+        stream.getAudioTracks().forEach(track => track.enabled = true);
       })
-      .catch(err => console.error('Media error:', err));
+      .catch(err => {
+        console.error('Media error:', err);
+        alert('Please allow camera/mic permissions.');
+      });
   });
 
   peer.on('call', call => {
@@ -52,9 +94,13 @@ function initPeer() {
     call.answer(stream);
     call.on('stream', remoteStream => {
       remoteVideo.srcObject = remoteStream;
+      remoteStream.getAudioTracks().forEach(track => track.enabled = true);
       startCallTimer();
     });
+    call.on('error', err => console.error('WebRTC call error:', err));
   });
+
+  peer.on('error', err => console.error('PeerJS error:', err));
 }
 
 function startCall(type) {
@@ -95,8 +141,10 @@ function acceptCall() {
   currentCall = call;
   call.on('stream', remoteStream => {
     remoteVideo.srcObject = remoteStream;
+    remoteStream.getAudioTracks().forEach(track => track.enabled = true);
     startCallTimer();
   });
+  call.on('error', err => console.error('WebRTC call error:', err));
 }
 
 function rejectCall() {
@@ -106,12 +154,14 @@ function rejectCall() {
 
 socket.on('call-accepted', () => {
   const to = username === 'Rav' ? 'Mon' : 'Rav';
-  const call = peer.call(users[to].id, stream);
+  const call = peer.call(to, stream);
   currentCall = call;
   call.on('stream', remoteStream => {
     remoteVideo.srcObject = remoteStream;
+    remoteStream.getAudioTracks().forEach(track => track.enabled = true);
     startCallTimer();
   });
+  call.on('error', err => console.error('WebRTC call error:', err));
 });
 
 socket.on('call-rejected', () => {
@@ -139,6 +189,7 @@ socket.on('call-ended', () => {
 });
 
 function startCallTimer() {
+  clearInterval(callTimerInterval); // Clear any existing interval
   let seconds = 0;
   callTimerInterval = setInterval(() => {
     seconds++;
@@ -197,12 +248,13 @@ function displayMessage({ id, username: sender, text, file, fileName, timestamp 
     const link = document.createElement('a');
     link.href = file;
     link.download = fileName;
-    link.textContent = `Download ${fileName}`;
+    link.textContent = `📎 ${fileName}`;
+    link.className = 'file-link';
     div.appendChild(link);
   }
   const timeP = document.createElement('p');
   timeP.className = 'timestamp';
-  timeP.textContent = new Date(timestamp).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+  timeP.textContent = new Date(timestamp).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: true });
   div.appendChild(timeP);
   if (sender === username) {
     const deleteSpan = document.createElement('span');
@@ -216,10 +268,8 @@ function displayMessage({ id, username: sender, text, file, fileName, timestamp 
 }
 
 socket.on('user-status', users => {
-  document.getElementById('rav-status').textContent = `Rav: ${users.Rav?.connected ? 'Online' : 'Offline'}`;
-  document.getElementById('rav-status').className = `status ${users.Rav?.connected ? 'online' : 'offline'}`;
-  document.getElementById('mon-status').textContent = `Mon: ${users.Mon?.connected ? 'Online' : 'Offline'}`;
-  document.getElementById('mon-status').className = `status ${users.Mon?.connected ? 'online' : 'offline'}`;
+  document.getElementById('rav-status').textContent = users.Rav?.connected ? '🟢' : '🔴';
+  document.getElementById('mon-status').textContent = users.Mon?.connected ? '🟢' : '🔴';
 });
 
 profilePicInput.onchange = () => {
@@ -240,6 +290,6 @@ profilePicInput.onchange = () => {
 
 socket.on('profile-pic-updated', ({ username: user, image }) => {
   if (user === username) {
-    profilePic.src = image;
+    profilePic.src = image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQYV2NgAAIAAAUAAarVyFEAAAAASUVORK5CYII=';
   }
 });
