@@ -1,5 +1,5 @@
 let username = null;
-const socket = io('https://romantic-chat-backend.onrender.com', { transports: ['websocket'] }); // Replace with your Render backend URL
+const socket = io('https://romantic-chat-app.onrender.com', { transports: ['websocket'] }); // Replace with your Render backend URL
 let peer = null;
 let currentCall = null;
 let callTimerInterval = null;
