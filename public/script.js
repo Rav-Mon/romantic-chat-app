@@ -1,5 +1,5 @@
 let username = null;
-const socket = io('https://romantic-chat-app.onrender.com', { transports: ['websocket'] }); // Replace with your Render backend URL
+const socket = io('https://romantic-chat-app.onrender.com', { transports: ['websocket'] }); // Your Render backend URL
 let peer = null;
 let currentCall = null;
 let callTimerInterval = null;
@@ -71,12 +71,22 @@ function initPeer() {
   peer = new Peer({
     config: {
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        // Add TURN server if needed (e.g., from Xirsys)
-        // { urls: 'turn:turn.example.com', username: 'user', credential: 'pass' }
+        { urls: ["stun:bn-turn1.xirsys.com"] },
+        {
+          username: "hBY1unBKVTVQuZgqUVlzMknf8MXs_eDK8_ms8A_EI19g6rM0QWqIrvM_fcyjn0LHAAAAAGhKlbByYXZtb24=",
+          credential: "cd6dbfac-476a-11f0-88cb-0242ac140004",
+          urls: [
+            "turn:bn-turn1.xirsys.com:80?transport=udp",
+            "turn:bn-turn1.xirsys.com:3478?transport=udp",
+            "turn:bn-turn1.xirsys.com:80?transport=tcp",
+            "turn:bn-turn1.xirsys.com:3478?transport=tcp",
+            "turns:bn-turn1.xirsys.com:443?transport=tcp",
+            "turns:bn-turn1.xirsys.com:5349?transport=tcp"
+          ]
+        }
       ]
     },
-    debug: 3 // Enable PeerJS debugging
+    debug: 3 // Enable detailed PeerJS logs
   });
   peer.on('open', id => {
     console.log('PeerJS ID:', id);
@@ -303,7 +313,7 @@ if (profilePicInput) {
   profilePicInput.onchange = () => {
     const file = profilePicInput.files[0];
     if (file && file.size > 2 * 1024 * 1024) {
-      alert('Image size must be less than 2MB');
+      alert('File size must be less than 2MB');
       return;
     }
     if (file) {
