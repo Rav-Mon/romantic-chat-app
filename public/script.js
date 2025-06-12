@@ -1,5 +1,5 @@
 let username = null;
-const socket = io('https://romantic-chat-app.onrender.com', { transports: ['websocket'] }); // Replace with your Render backend URL
+const socket = io('https://romantic-chat-frontend.onrender.com', { transports: ['websocket'] }); // Replace with your Render backend URL
 let peer = null;
 let currentCall = null;
 let callTimerInterval = null;
@@ -23,27 +23,27 @@ const loginButtons = loginScreen.querySelectorAll('button');
 
 function showConnecting(show) {
   loginButtons.forEach(btn => btn.disabled = show);
-  const status = document.createElement('p');
+  const status = document.getElementById('connection-status') || document.createElement('p');
   status.id = 'connection-status';
   status.textContent = show ? 'Connecting to server...' : '';
   status.style.color = '#25D366';
   status.style.textAlign = 'center';
-  if (show) {
+  if (show && !status.parentElement) {
     loginScreen.appendChild(status);
-  } else {
-    const existing = document.getElementById('connection-status');
-    if (existing) existing.remove();
+  } else if (!show && status.parentElement) {
+    status.remove();
   }
 }
 
 socket.on('connect', () => {
+  console.log('Socket.IO connected');
   showConnecting(false);
 });
 
 socket.on('connect_error', (err) => {
-  console.error('Socket.IO connection error:', err);
+  console.error('Socket.IO connection error:', err.message);
   showConnecting(false);
-  alert('Failed to connect to server. Please try again.');
+  alert(`Connection failed: ${err.message}. Please check your internet or try again later.`);
 });
 
 function login(user) {
@@ -53,6 +53,7 @@ function login(user) {
 }
 
 socket.on('login-success', ({ username: user, messages }) => {
+  console.log('Login successful:', user);
   showConnecting(false);
   loginScreen.style.display = 'none';
   chatScreen.style.display = 'flex';
@@ -61,6 +62,7 @@ socket.on('login-success', ({ username: user, messages }) => {
 });
 
 socket.on('login-failed', (message) => {
+  console.log('Login failed:', message);
   showConnecting(false);
   alert(message || 'Login failed!');
 });
@@ -70,18 +72,20 @@ function initPeer() {
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        // Add TURN server credentials from Xirsys or another provider
-        // Example: { urls: 'turn:turn.example.com', username: 'user', credential: 'pass' }
+        // Add TURN server if needed (e.g., from Xirsys)
+        // { urls: 'turn:turn.example.com', username: 'user', credential: 'pass' }
       ]
-    }
+    },
+    debug: 3 // Enable PeerJS debugging
   });
   peer.on('open', id => {
+    console.log('PeerJS ID:', id);
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(s => {
         stream = s;
         localVideo.srcObject = stream;
-        // Ensure audio tracks are enabled
         stream.getAudioTracks().forEach(track => track.enabled = true);
+        stream.getVideoTracks().forEach(track => track.enabled = true);
       })
       .catch(err => {
         console.error('Media error:', err);
@@ -90,21 +94,32 @@ function initPeer() {
   });
 
   peer.on('call', call => {
+    console.log('Receiving call');
     currentCall = call;
     call.answer(stream);
     call.on('stream', remoteStream => {
+      console.log('Received remote stream');
       remoteVideo.srcObject = remoteStream;
       remoteStream.getAudioTracks().forEach(track => track.enabled = true);
+      remoteStream.getVideoTracks().forEach(track => track.enabled = true);
       startCallTimer();
     });
     call.on('error', err => console.error('WebRTC call error:', err));
+    call.on('close', () => {
+      console.log('Call closed');
+      endCall();
+    });
   });
 
-  peer.on('error', err => console.error('PeerJS error:', err));
+  peer.on('error', err => {
+    console.error('PeerJS error:', err);
+    alert(`PeerJS error: ${err.type}. Please try again.`);
+  });
 }
 
 function startCall(type) {
   const to = username === 'Rav' ? 'Mon' : 'Rav';
+  console.log(`Starting ${type} call to ${to}`);
   socket.emit('call-user', { to, type });
   callScreen.style.display = 'flex';
   if (type === 'voice') {
@@ -117,6 +132,7 @@ function startCall(type) {
 }
 
 socket.on('incoming-call', ({ from, username: caller, type }) => {
+  console.log(`Incoming ${type} call from ${caller}`);
   incomingCallDiv.style.display = 'block';
   callTypeSpan.textContent = type;
   callerSpan.textContent = caller;
@@ -127,6 +143,7 @@ socket.on('incoming-call', ({ from, username: caller, type }) => {
 function acceptCall() {
   const from = incomingCallDiv.dataset.from;
   const type = incomingCallDiv.dataset.type;
+  console.log(`Accepting ${type} call from ${from}`);
   socket.emit('accept-call', { to: from });
   incomingCallDiv.style.display = 'none';
   callScreen.style.display = 'flex';
@@ -140,28 +157,36 @@ function acceptCall() {
   const call = peer.call(from, stream);
   currentCall = call;
   call.on('stream', remoteStream => {
+    console.log('Received remote stream on call');
     remoteVideo.srcObject = remoteStream;
     remoteStream.getAudioTracks().forEach(track => track.enabled = true);
+    remoteStream.getVideoTracks().forEach(track => track.enabled = true);
     startCallTimer();
   });
   call.on('error', err => console.error('WebRTC call error:', err));
+  call.on('close', () => endCall());
 }
 
 function rejectCall() {
-  socket.emit('reject-call', { to: incomingCallDiv.dataset.from });
+  const from = incomingCallDiv.dataset.from;
+  socket.emit('reject-call', { to: from });
   incomingCallDiv.style.display = 'none';
 }
 
 socket.on('call-accepted', () => {
   const to = username === 'Rav' ? 'Mon' : 'Rav';
+  console.log(`Call accepted, calling ${to}`);
   const call = peer.call(to, stream);
   currentCall = call;
   call.on('stream', remoteStream => {
+    console.log('Received remote stream on accepted call');
     remoteVideo.srcObject = remoteStream;
     remoteStream.getAudioTracks().forEach(track => track.enabled = true);
+    remoteStream.getVideoTracks().forEach(track => track.enabled = true);
     startCallTimer();
   });
   call.on('error', err => console.error('WebRTC call error:', err));
+  call.on('close', () => endCall());
 });
 
 socket.on('call-rejected', () => {
@@ -189,7 +214,8 @@ socket.on('call-ended', () => {
 });
 
 function startCallTimer() {
-  clearInterval(callTimerInterval); // Clear any existing interval
+  console.log('Starting call timer');
+  clearInterval(callTimerInterval);
   let seconds = 0;
   callTimerInterval = setInterval(() => {
     seconds++;
@@ -200,6 +226,7 @@ function startCallTimer() {
 }
 
 function stopCallTimer() {
+  console.log('Stopping call timer');
   if (callTimerInterval) {
     clearInterval(callTimerInterval);
     callTimerInterval = null;
@@ -272,24 +299,26 @@ socket.on('user-status', users => {
   document.getElementById('mon-status').textContent = users.Mon?.connected ? '🟢' : '🔴';
 });
 
-profilePicInput.onchange = () => {
-  const file = profilePicInput.files[0];
-  if (file && file.size > 2 * 1024 * 1024) {
-    alert('Image size must be less than 2MB');
-    return;
-  }
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      profilePic.src = reader.result;
-      socket.emit('profile-pic', { username, image: reader.result });
-    };
-    reader.readAsDataURL(file);
-  }
-};
+if (profilePicInput) {
+  profilePicInput.onchange = () => {
+    const file = profilePicInput.files[0];
+    if (file && file.size > 2 * 1024 * 1024) {
+      alert('Image size must be less than 2MB');
+      return;
+    }
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        profilePic.src = reader.result;
+        socket.emit('profile-pic', { username, image: reader.result });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+}
 
 socket.on('profile-pic-updated', ({ username: user, image }) => {
   if (user === username) {
-    profilePic.src = image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQYV2NgAAIAAAUAAarVyFEAAAAASUVORK5CYII=';
+    profilePic.src = image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHegJ3bQe1PwAAAABJRU5ErkJggg==';
   }
 });
