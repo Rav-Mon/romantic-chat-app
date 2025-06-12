@@ -1,7 +1,12 @@
 const express = require('express');
 const app = express();
 const server = require('http').createServer(app);
-const io = require('socket.io')(server, { cors: { origin: '*' } });
+const io = require('socket.io')(server, {
+  cors: {
+    origin: 'https://romantic-chat-frontend.onrender.com',
+    methods: ['GET', 'POST']
+  }
+});
 const { v4: uuidv4 } = require('uuid');
 
 app.use(express.static('public'));
@@ -10,17 +15,30 @@ const users = { 'Rav': null, 'Mon': null };
 const messages = [];
 
 io.on('connection', socket => {
+  console.log('Client connected:', socket.id);
   socket.on('login', username => {
+    console.log('Login attempt:', username);
     if (['Rav', 'Mon'].includes(username)) {
       if (!users[username] || !users[username].connected) {
-        users[username] = { id: socket.id, connected: true };
+        users[username] = { id: socket.id, connected: true, peerId: null };
         socket.emit('login-success', { username, messages });
         io.emit('user-status', users);
+        console.log(`${username} logged in`);
       } else {
         socket.emit('login-failed', 'User already logged in');
+        console.log(`${username} login failed: already logged in`);
       }
     } else {
       socket.emit('login-failed', 'Invalid username');
+      console.log(`${username} login failed: invalid username`);
+    }
+  });
+
+  socket.on('peer-id', peerId => {
+    const username = Object.keys(users).find(u => users[u]?.id === socket.id);
+    if (username) {
+      users[username].peerId = peerId;
+      console.log(`${username} registered Peer ID: ${peerId}`);
     }
   });
 
@@ -40,15 +58,26 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('signal', data => {
-    if (data.to && users[data.to] && users[data.to].connected) {
-      io.to(users[data.to].id).emit('signal', { ...data, from: socket.id });
+  socket.on('call-user', ({ to, type, offer }) => {
+    if (users[to] && users[to].connected) {
+      io.to(users[to].id).emit('incoming-call', {
+        from: socket.id,
+        username: Object.keys(users).find(key => users[key].id === socket.id),
+        type,
+        offer
+      });
     }
   });
 
-  socket.on('call-user', ({ to, type }) => {
+  socket.on('call-answer', ({ to, answer }) => {
     if (users[to] && users[to].connected) {
-      io.to(users[to].id).emit('incoming-call', { from: socket.id, username: Object.keys(users).find(key => users[key].id === socket.id), type });
+      io.to(users[to].id).emit('call-answered', { answer });
+    }
+  });
+
+  socket.on('ice-candidate', ({ to, candidate }) => {
+    if (users[to] && users[to].connected) {
+      io.to(users[to].id).emit('ice-candidate', { candidate });
     }
   });
 
@@ -73,8 +102,9 @@ io.on('connection', socket => {
   socket.on('disconnect', () => {
     for (let username in users) {
       if (users[username] && users[username].id === socket.id) {
-        users[username] = null; // Clear user on disconnect
+        users[username] = null;
         io.emit('user-status', users);
+        console.log(`${username} disconnected`);
         break;
       }
     }
