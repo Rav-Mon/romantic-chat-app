@@ -46,6 +46,11 @@ socket.on('connect_error', (err) => {
   alert(`Connection failed: ${err.message}. Please check your internet or try again later.`);
 });
 
+socket.on('call-failed', (message) => {
+  alert(message);
+  callScreen.style.display = 'none';
+});
+
 function login(user) {
   showConnecting(true);
   username = user;
@@ -68,28 +73,35 @@ socket.on('login-failed', (message) => {
 });
 
 function initPeer() {
-  peer = new Peer({
-    config: {
-      iceServers: [
-        { urls: ["stun:bn-turn1.xirsys.com"] },
-        {
-          username: "hBY1unBKVTVQuZgqUVlzMknf8MXs_eDK8_ms8A_EI19g6rM0QWqIrvM_fcyjn0LHAAAAAGhKlbByYXZtb24=",
-          credential: "cd6dbfac-476a-11f0-88cb-0242ac140004",
-          urls: [
-            "turn:bn-turn1.xirsys.com:80?transport=udp",
-            "turn:bn-turn1.xirsys.com:3478?transport=udp",
-            "turn:bn-turn1.xirsys.com:80?transport=tcp",
-            "turn:bn-turn1.xirsys.com:3478?transport=tcp",
-            "turns:bn-turn1.xirsys.com:443?transport=tcp",
-            "turns:bn-turn1.xirsys.com:5349?transport=tcp"
-          ]
-        }
-      ]
-    },
-    secure: true,
-    debug: 3
-  });
+  fetch('https://romantic-chat-backend.onrender.com/ice')
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      return res.json();
+    })
+    .then(iceServers => {
+      console.log('ICE servers fetched:', iceServers);
+      peer = new Peer({
+        config: { iceServers },
+        secure: true,
+        debug: 3
+      });
+      setupPeer();
+    })
+    .catch(err => {
+      console.error('ICE fetch error:', err.message);
+      alert('Failed to fetch ICE servers. Using fallback STUN.');
+      peer = new Peer({
+        config: {
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        },
+        secure: true,
+        debug: 3
+      });
+      setupPeer();
+    });
+}
 
+function setupPeer() {
   peer.on('open', id => {
     console.log('PeerJS ID:', id);
     socket.emit('peer-id', id);
@@ -99,17 +111,23 @@ function initPeer() {
         localVideo.srcObject = stream;
         stream.getAudioTracks().forEach(track => track.enabled = true);
         stream.getVideoTracks().forEach(track => track.enabled = true);
+        console.log('Local stream ready');
       })
       .catch(err => {
-        console.error('Media error:', err);
+        console.error('Media error:', err.message);
         alert('Please allow camera/mic permissions.');
       });
   });
 
   peer.on('call', call => {
     console.log('Receiving call');
+    if (!stream) {
+      console.warn('No local stream yet, delaying answer');
+      setTimeout(() => call.answer(stream), 1000);
+    } else {
+      call.answer(stream);
+    }
     currentCall = call;
-    call.answer(stream);
     call.on('stream', remoteStream => {
       console.log('Received remote stream');
       remoteVideo.srcObject = remoteStream;
@@ -133,6 +151,10 @@ function initPeer() {
 function startCall(type) {
   const to = username === 'Rav' ? 'Mon' : 'Rav';
   console.log(`Starting ${type} call to ${to}`);
+  if (!stream) {
+    alert('Camera/mic not ready. Please allow permissions and try again.');
+    return;
+  }
   callScreen.style.display = 'flex';
   if (type === 'voice') {
     localVideo.style.display = 'none';
@@ -164,7 +186,8 @@ function startCall(type) {
     .then(offer => call.peerConnection.setLocalDescription(offer))
     .then(() => {
       socket.emit('call-user', { to, type, offer: call.peerConnection.localDescription });
-    });
+    })
+    .catch(err => console.error('Offer creation error:', err));
 }
 
 socket.on('incoming-call', ({ from, username: caller, type, offer }) => {
@@ -179,7 +202,8 @@ socket.on('incoming-call', ({ from, username: caller, type, offer }) => {
 
 socket.on('call-answered', ({ answer }) => {
   if (currentCall) {
-    currentCall.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    currentCall.peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
+      .catch(err => console.error('Set remote description error:', err));
   }
 });
 
@@ -205,6 +229,10 @@ function acceptCall() {
     localVideo.style.display = 'block';
     remoteVideo.style.display = 'block';
   }
+  if (!stream) {
+    alert('Camera/mic not ready. Please allow permissions and try again.');
+    return;
+  }
   const call = peer.call(from, stream);
   currentCall = call;
   call.peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
@@ -212,7 +240,8 @@ function acceptCall() {
     .then(answer => call.peerConnection.setLocalDescription(answer))
     .then(() => {
       socket.emit('call-answer', { to: from, answer: call.peerConnection.localDescription });
-    });
+    })
+    .catch(err => console.error('Answer creation error:', err));
   call.on('stream', remoteStream => {
     console.log('Received remote stream on call');
     remoteVideo.srcObject = remoteStream;
@@ -306,43 +335,43 @@ function sendMessage() {
   }
 }
 
-function displayMessage(message) {
-  const div = document.createElement('div');
-  div.className = `message ${message.user === username ? 'me' : 'other'}`;
-  if (message.text) {
-    const textP = document.createElement('p');
-    textP.textContent = message.text;
-    div.appendChild(textP);
-  }
-  if (message.file) {
-    const link = document.createElement('a');
-    link.href = message.file;
-    link.download = message.fileName;
-    link.textContent = `📎 ${message.fileName}`;
-    link.className = 'file-link';
-    div.appendChild(link);
-  }
-  const timeP = document.createElement('p');
-  timeP.className = 'timestamp';
-  timeP.textContent = new Date(message.timestamp).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: true });
-  div.appendChild(timeP);
-  if (message.user === username) {
-    const deleteSpan = document.createElement('span');
-    deleteSpan.className = 'delete';
-    deleteSpan.textContent = '✖';
-    deleteSpan.onclick = () => socket.emit('delete-message', message.id);
-    div.appendChild(deleteSpan);
-  }
-  messagesDiv.appendChild(div);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
-}
-
 socket.on('message', message => displayMessage(message));
 
 socket.on('messages-updated', messages => {
   messagesDiv.innerHTML = '';
   messages.forEach(displayMessage);
 });
+
+function displayMessage({ id, username: sender, text, file, fileName, timestamp }) {
+  const div = document.createElement('div');
+  div.className = `message ${sender === username ? 'me' : 'other'}`;
+  if (text) {
+    const textP = document.createElement('p');
+    textP.textContent = text;
+    div.appendChild(textP);
+  }
+  if (file) {
+    const link = document.createElement('a');
+    link.href = file;
+    link.download = fileName;
+    link.textContent = `📎 ${fileName}`;
+    link.className = 'file-link';
+    div.appendChild(link);
+  }
+  const timeP = document.createElement('p');
+  timeP.className = 'timestamp';
+  timeP.textContent = new Date(timestamp).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: true });
+  div.appendChild(timeP);
+  if (sender === username) {
+    const deleteSpan = document.createElement('span');
+    deleteSpan.className = 'delete';
+    deleteSpan.textContent = '✖';
+    deleteSpan.onclick = () => socket.emit('delete-message', id);
+    div.appendChild(deleteSpan);
+  }
+  messagesDiv.appendChild(div);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
 
 socket.on('user-status', users => {
   document.getElementById('rav-status').textContent = users.Rav?.connected ? '🟢' : '🔴';
