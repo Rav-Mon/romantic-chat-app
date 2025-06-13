@@ -4,6 +4,7 @@ let peer = null;
 let currentCall = null;
 let callTimerInterval = null;
 let stream = null;
+let isCalling = false;
 
 const loginScreen = document.getElementById('login-screen');
 const chatScreen = document.getElementById('chat-screen');
@@ -49,6 +50,7 @@ socket.on('connect_error', (err) => {
 socket.on('call-failed', (message) => {
   alert(message);
   callScreen.style.display = 'none';
+  isCalling = false;
 });
 
 function login(user) {
@@ -81,7 +83,17 @@ function initPeer() {
     .then(iceServers => {
       console.log('ICE servers fetched:', iceServers);
       peer = new Peer({
-        config: { iceServers },
+        config: {
+          iceServers: [
+            ...iceServers,
+            { urls: 'stun:stun.l.google.com:19302' },
+            {
+              urls: 'turn:openrelay.metered.ca:443',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
+            }
+          ]
+        },
         secure: true,
         debug: 3
       });
@@ -89,10 +101,17 @@ function initPeer() {
     })
     .catch(err => {
       console.error('ICE fetch error:', err.message);
-      alert('Failed to fetch ICE servers. Using fallback STUN.');
+      alert('Failed to fetch ICE servers. Using fallback.');
       peer = new Peer({
         config: {
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            {
+              urls: 'turn:openrelay.metered.ca:443',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
+            }
+          ]
         },
         secure: true,
         debug: 3
@@ -123,48 +142,24 @@ function setupPeer() {
     console.log('Receiving call');
     if (!stream) {
       console.warn('No local stream yet, delaying answer');
-      setTimeout(() => call.answer(stream), 1000);
-    } else {
-      call.answer(stream);
+      setTimeout(() => {
+        if (stream) call.answer(stream);
+      }, 1000);
+      return;
     }
     currentCall = call;
-    call.on('stream', remoteStream => {
-      console.log('Received remote stream');
-      remoteVideo.srcObject = remoteStream;
-      remoteStream.getAudioTracks().forEach(track => track.enabled = true);
-      remoteStream.getVideoTracks().forEach(track => track.enabled = true);
-      startCallTimer();
-    });
-    call.on('error', err => console.error('WebRTC call error:', err));
-    call.on('close', () => {
-      console.log('Call closed');
-      endCall();
-    });
+    call.answer(stream);
+    setupCallHandlers(call);
   });
 
   peer.on('error', err => {
     console.error('PeerJS error:', err);
     alert(`PeerJS error: ${err.type}. Please try again.`);
+    isCalling = false;
   });
 }
 
-function startCall(type) {
-  const to = username === 'Rav' ? 'Mon' : 'Rav';
-  console.log(`Starting ${type} call to ${to}`);
-  if (!stream) {
-    alert('Camera/mic not ready. Please allow permissions and try again.');
-    return;
-  }
-  callScreen.style.display = 'flex';
-  if (type === 'voice') {
-    localVideo.style.display = 'none';
-    remoteVideo.style.display = 'none';
-  } else {
-    localVideo.style.display = 'block';
-    remoteVideo.style.display = 'block';
-  }
-  const call = peer.call(to, stream);
-  currentCall = call;
+function setupCallHandlers(call) {
   call.on('stream', remoteStream => {
     console.log('Received remote stream');
     remoteVideo.srcObject = remoteStream;
@@ -177,6 +172,38 @@ function startCall(type) {
     console.log('Call closed');
     endCall();
   });
+}
+
+function startCall(type) {
+  if (isCalling) {
+    alert('A call is already in progress.');
+    return;
+  }
+  isCalling = true;
+  const to = username === 'Rav' ? 'Mon' : 'Rav';
+  console.log(`Starting ${type} call to ${to}`);
+  if (!stream) {
+    alert('Camera/mic not ready. Please allow permissions and try again.');
+    isCalling = false;
+    return;
+  }
+  callScreen.style.display = 'flex';
+  if (type === 'voice') {
+    localVideo.style.display = 'none';
+    remoteVideo.style.display = 'none';
+  } else {
+    localVideo.style.display = 'block';
+    remoteVideo.style.display = 'block';
+  }
+  const call = peer.call(to, stream);
+  if (!call) {
+    alert('Failed to initiate call. Please try again.');
+    isCalling = false;
+    callScreen.style.display = 'none';
+    return;
+  }
+  currentCall = call;
+  setupCallHandlers(call);
   call.peerConnection.onicecandidate = event => {
     if (event.candidate) {
       socket.emit('ice-candidate', { to, candidate: event.candidate });
@@ -187,7 +214,11 @@ function startCall(type) {
     .then(() => {
       socket.emit('call-user', { to, type, offer: call.peerConnection.localDescription });
     })
-    .catch(err => console.error('Offer creation error:', err));
+    .catch(err => {
+      console.error('Offer creation error:', err);
+      isCalling = false;
+      callScreen.style.display = 'none';
+    });
 }
 
 socket.on('incoming-call', ({ from, username: caller, type, offer }) => {
@@ -215,6 +246,11 @@ socket.on('ice-candidate', ({ candidate }) => {
 });
 
 function acceptCall() {
+  if (isCalling) {
+    alert('A call is already in progress.');
+    return;
+  }
+  isCalling = true;
   const from = incomingCallDiv.dataset.from;
   const type = incomingCallDiv.dataset.type;
   const offer = JSON.parse(incomingCallDiv.dataset.offer);
@@ -231,9 +267,17 @@ function acceptCall() {
   }
   if (!stream) {
     alert('Camera/mic not ready. Please allow permissions and try again.');
+    isCalling = false;
+    callScreen.style.display = 'none';
     return;
   }
   const call = peer.call(from, stream);
+  if (!call) {
+    alert('Failed to initiate call. Please try again.');
+    isCalling = false;
+    callScreen.style.display = 'none';
+    return;
+  }
   currentCall = call;
   call.peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
     .then(() => call.peerConnection.createAnswer())
@@ -241,16 +285,12 @@ function acceptCall() {
     .then(() => {
       socket.emit('call-answer', { to: from, answer: call.peerConnection.localDescription });
     })
-    .catch(err => console.error('Answer creation error:', err));
-  call.on('stream', remoteStream => {
-    console.log('Received remote stream on call');
-    remoteVideo.srcObject = remoteStream;
-    remoteStream.getAudioTracks().forEach(track => track.enabled = true);
-    remoteStream.getVideoTracks().forEach(track => track.enabled = true);
-    startCallTimer();
-  });
-  call.on('error', err => console.error('WebRTC call error:', err));
-  call.on('close', () => endCall());
+    .catch(err => {
+      console.error('Answer creation error:', err);
+      isCalling = false;
+      callScreen.style.display = 'none';
+    });
+  setupCallHandlers(call);
   call.peerConnection.onicecandidate = event => {
     if (event.candidate) {
       socket.emit('ice-candidate', { to: from, candidate: event.candidate });
@@ -262,6 +302,7 @@ function rejectCall() {
   const from = incomingCallDiv.dataset.from;
   socket.emit('reject-call', { to: from });
   incomingCallDiv.style.display = 'none';
+  isCalling = false;
 }
 
 socket.on('call-accepted', () => {
@@ -271,6 +312,7 @@ socket.on('call-accepted', () => {
 socket.on('call-rejected', () => {
   alert('Call rejected');
   callScreen.style.display = 'none';
+  isCalling = false;
 });
 
 function endCall() {
@@ -281,6 +323,7 @@ function endCall() {
   socket.emit('end-call', { to: username === 'Rav' ? 'Mon' : 'Rav' });
   callScreen.style.display = 'none';
   stopCallTimer();
+  isCalling = false;
 }
 
 socket.on('call-ended', () => {
@@ -290,6 +333,7 @@ socket.on('call-ended', () => {
   }
   callScreen.style.display = 'none';
   stopCallTimer();
+  isCalling = false;
 });
 
 function startCallTimer() {
@@ -388,8 +432,16 @@ if (profilePicInput) {
     if (file) {
       const reader = new FileReader();
       reader.onload = () => {
-        profilePic.src = reader.result;
-        socket.emit('profile-pic', { username, image: reader.result });
+        const img = new Image();
+        img.onload = () => {
+          profilePic.src = reader.result;
+          socket.emit('profile-pic', { username, image: reader.result });
+        };
+        img.onerror = () => {
+          alert('Invalid image file. Reverting to default.');
+          profilePic.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHegJ3bQe1PwAAAABJRU5ErkJggg==';
+        };
+        img.src = reader.result;
       };
       reader.readAsDataURL(file);
     }
@@ -398,6 +450,13 @@ if (profilePicInput) {
 
 socket.on('profile-pic-updated', ({ username: user, image }) => {
   if (user === username) {
-    profilePic.src = image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHegJ3bQe1PwAAAABJRU5ErkJggg==';
+    const img = new Image();
+    img.onload = () => {
+      profilePic.src = image;
+    };
+    img.onerror = () => {
+      profilePic.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHegJ3bQe1PwAAAABJRU5ErkJggg==';
+    };
+    img.src = image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHegJ3bQe1PwAAAABJRU5ErkJggg==';
   }
 });
