@@ -49,8 +49,7 @@ socket.on('connect_error', (err) => {
 
 socket.on('call-failed', (message) => {
   alert(message);
-  callScreen.style.display = 'none';
-  isCalling = false;
+  endCall();
 });
 
 function login(user) {
@@ -73,6 +72,7 @@ socket.on('login-failed', (message) => {
   showConnecting(false);
   alert(message || 'Login failed!');
 });
+
 function initPeer() {
   if (peer) {
     peer.destroy();
@@ -82,85 +82,93 @@ function initPeer() {
     stream.getTracks().forEach(track => track.stop());
     stream = null;
   }
-  fetch('https://romantic-chat-app.onrender.com/ice', { method: 'GET' })
-    .then(res => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      return res.json();
-    })
-    .then(iceServers => {
-      console.log('ICE servers fetched:', iceServers);
-      const allIceServers = [
-        ...iceServers,
-        { urls: 'stun:stun.l.google.com:19302' },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:numb.viagenie.ca:3478',
-          username: 'webrtc@live.com',
-          credential: 'muazkh'
-        }
-      ];
-      setupPeer(allIceServers);
-    })
-    .catch(err => {
-      console.error('ICE fetch error:', err.message);
-      alert('Failed to fetch ICE servers. Using fallback.');
-      const fallbackIceServers = [
-        { urls: 'stun:stun.l.google.com:19302' },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:numb.viagenie.ca:3478',
-          username: 'webrtc@live.com',
-          credential: 'muazkh'
-        }
-      ];
-      setupPeer(fallbackIceServers);
+  const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:numb.viagenie.ca:3478',
+      username: 'webrtc@live.com',
+      credential: 'muazkh'
+    }
+  ];
+  console.log('Using ICE servers:', iceServers);
+  try {
+    peer = new Peer({
+      config: { iceServers },
+      secure: true,
+      debug: 3
     });
+    setupPeer();
+  } catch (err) {
+    console.error('PeerJS initialization error:', err.message);
+    alert('Failed to initialize PeerJS. Retrying...');
+    setTimeout(initPeer, 2000);
+  }
 }
 
 function setupPeer() {
+  if (!peer) {
+    console.error('Peer is null, retrying initialization');
+    setTimeout(initPeer, 1000);
+    return;
+  }
   peer.on('open', id => {
     console.log('PeerJS ID:', id);
     socket.emit('peer-id', id);
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(s => {
-        stream = s;
-        localVideo.srcObject = stream;
-        stream.getAudioTracks().forEach(track => track.enabled = true);
-        stream.getVideoTracks().forEach(track => track.enabled = true);
-        console.log('Local stream ready');
-      })
-      .catch(err => {
-        console.error('Media error:', err.message);
-        alert('Please allow camera/mic permissions.');
-      });
   });
 
   peer.on('call', call => {
     console.log('Receiving call');
-    if (!stream) {
-      console.warn('No local stream yet, delaying answer');
-      setTimeout(() => {
-        if (stream) call.answer(stream);
-      }, 1000);
+    if (isCalling) {
+      console.warn('Already in a call, rejecting new call');
+      call.close();
       return;
     }
+    isCalling = true;
     currentCall = call;
-    call.answer(stream);
-    setupCallHandlers(call);
+    getMediaStream(call.options.metadata.type)
+      .then(s => {
+        stream = s;
+        localVideo.srcObject = stream;
+        call.answer(stream);
+        setupCallHandlers(call);
+      })
+      .catch(err => {
+        console.error('Media error:', err.message);
+        alert('Media error: ' + err.message);
+        endCall();
+      });
   });
 
   peer.on('error', err => {
     console.error('PeerJS error:', err);
-    alert(`PeerJS error: ${err.type}. Please try again.`);
-    isCalling = false;
+    alert(`PeerJS error: ${err.type}. Retrying...`);
+    endCall();
+    setTimeout(initPeer, 2000);
+  });
+}
+
+function getMediaStream(type) {
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+  console.log(`Requesting media stream for ${type} call`);
+  return navigator.mediaDevices.getUserMedia({
+    audio: true,
+    video: type === 'video' ? true : false
+  }).catch(err => {
+    console.error('getUserMedia error:', err.name, err.message);
+    throw err;
   });
 }
 
@@ -168,11 +176,12 @@ function setupCallHandlers(call) {
   call.on('stream', remoteStream => {
     console.log('Received remote stream');
     remoteVideo.srcObject = remoteStream;
-    remoteStream.getAudioTracks().forEach(track => track.enabled = true);
-    remoteStream.getVideoTracks().forEach(track => track.enabled = true);
     startCallTimer();
   });
-  call.on('error', err => console.error('WebRTC call error:', err));
+  call.on('error', err => {
+    console.error('WebRTC call error:', err);
+    endCall();
+  });
   call.on('close', () => {
     console.log('Call closed');
     endCall();
@@ -187,42 +196,52 @@ function startCall(type) {
   isCalling = true;
   const to = username === 'Rav' ? 'Mon' : 'Rav';
   console.log(`Starting ${type} call to ${to}`);
-  if (!stream) {
-    alert('Camera/mic not ready. Please allow permissions and try again.');
-    isCalling = false;
-    return;
-  }
-  callScreen.style.display = 'flex';
-  if (type === 'voice') {
-    localVideo.style.display = 'none';
-    remoteVideo.style.display = 'none';
-  } else {
-    localVideo.style.display = 'block';
-    remoteVideo.style.display = 'block';
-  }
-  const call = peer.call(to, stream);
-  if (!call) {
-    alert('Failed to initiate call. Please try again.');
-    isCalling = false;
-    callScreen.style.display = 'none';
-    return;
-  }
-  currentCall = call;
-  setupCallHandlers(call);
-  call.peerConnection.onicecandidate = event => {
-    if (event.candidate) {
-      socket.emit('ice-candidate', { to, candidate: event.candidate });
-    }
-  };
-  call.peerConnection.createOffer()
-    .then(offer => call.peerConnection.setLocalDescription(offer))
-    .then(() => {
-      socket.emit('call-user', { to, type, offer: call.peerConnection.localDescription });
+  getMediaStream(type)
+    .then(s => {
+      stream = s;
+      callScreen.style.display = 'flex';
+      if (type === 'voice') {
+        localVideo.style.display = 'none';
+        remoteVideo.style.display = 'none';
+      } else {
+        localVideo.srcObject = stream;
+        localVideo.style.display = 'block';
+        remoteVideo.style.display = 'block';
+      }
+      const call = peer.call(to, stream, { metadata: { type } });
+      if (!call) {
+        alert('Failed to initiate call. Please try again.');
+        endCall();
+        return;
+      }
+      currentCall = call;
+      setupCallHandlers(call);
+      call.peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+          console.log('Sending ICE candidate to:', to);
+          socket.emit('ice-candidate', { to, candidate: event.candidate });
+        }
+      };
+      setTimeout(() => {
+        call.peerConnection.createOffer()
+          .then(offer => {
+            console.log('Created offer:', offer);
+            return call.peerConnection.setLocalDescription(offer);
+          })
+          .then(() => {
+            console.log('Sending offer to:', to);
+            socket.emit('call-user', { to, type, offer: call.peerConnection.localDescription });
+          })
+          .catch(err => {
+            console.error('Offer creation error:', err);
+            endCall();
+          });
+      }, 1000);
     })
     .catch(err => {
-      console.error('Offer creation error:', err);
-      isCalling = false;
-      callScreen.style.display = 'none';
+      console.error('Media error:', err.message);
+      alert('Media error: ' + err.message);
+      endCall();
     });
 }
 
@@ -238,6 +257,7 @@ socket.on('incoming-call', ({ from, username: caller, type, offer }) => {
 
 socket.on('call-answered', ({ answer }) => {
   if (currentCall) {
+    console.log('Received answer:', answer);
     currentCall.peerConnection.setRemoteDescription(new RTCSessionDescription(answer))
       .catch(err => console.error('Set remote description error:', err));
   }
@@ -245,6 +265,7 @@ socket.on('call-answered', ({ answer }) => {
 
 socket.on('ice-candidate', ({ candidate }) => {
   if (currentCall) {
+    console.log('Received ICE candidate:', candidate);
     currentCall.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
       .catch(err => console.error('Error adding ICE candidate:', err));
   }
@@ -270,75 +291,85 @@ function acceptCall() {
     localVideo.style.display = 'block';
     remoteVideo.style.display = 'block';
   }
-  if (!stream) {
-    alert('Camera/mic not ready. Please allow permissions and try again.');
-    isCalling = false;
-    callScreen.style.display = 'none';
-    return;
-  }
-  const call = peer.call(from, stream);
-  if (!call) {
-    alert('Failed to initiate call. Please try again.');
-    isCalling = false;
-    callScreen.style.display = 'none';
-    return;
-  }
-  currentCall = call;
-  call.peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
-    .then(() => call.peerConnection.createAnswer())
-    .then(answer => call.peerConnection.setLocalDescription(answer))
-    .then(() => {
-      socket.emit('call-answer', { to: from, answer: call.peerConnection.localDescription });
+  getMediaStream(type)
+    .then(s => {
+      stream = s;
+      if (type === 'video') localVideo.srcObject = stream;
+      const call = peer.call(from, stream, { metadata: { type } });
+      if (!call) {
+        alert('Failed to initiate call. Please try again.');
+        endCall();
+        return;
+      }
+      currentCall = call;
+      call.peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
+        .then(() => call.peerConnection.createAnswer())
+        .then(answer => {
+          console.log('Created answer:', answer);
+          return call.peerConnection.setLocalDescription(answer);
+        })
+        .then(() => {
+          console.log('Sending answer to:', from);
+          socket.emit('call-answer', { to: from, answer: call.peerConnection.localDescription });
+        })
+        .catch(err => {
+          console.error('Answer creation error:', err);
+          endCall();
+        });
+      setupCallHandlers(call);
+      call.peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+          console.log('Sending ICE candidate to:', from);
+          socket.emit('ice-candidate', { to: from, candidate: event.candidate });
+        }
+      };
     })
     .catch(err => {
-      console.error('Answer creation error:', err);
-      isCalling = false;
-      callScreen.style.display = 'none';
+      console.error('Media error:', err.message);
+      alert('Media error: ' + err.message);
+      endCall();
     });
-  setupCallHandlers(call);
-  call.peerConnection.onicecandidate = event => {
-    if (event.candidate) {
-      socket.emit('ice-candidate', { to: from, candidate: event.candidate });
-    }
-  };
 }
 
 function rejectCall() {
   const from = incomingCallDiv.dataset.from;
+  console.log('Rejecting call from:', from);
   socket.emit('reject-call', { to: from });
   incomingCallDiv.style.display = 'none';
   isCalling = false;
 }
 
 socket.on('call-accepted', () => {
-  console.log('Call accepted');
+  console.log('Call accepted by peer');
 });
 
 socket.on('call-rejected', () => {
   alert('Call rejected');
-  callScreen.style.display = 'none';
-  isCalling = false;
+  endCall();
 });
 
 function endCall() {
+  console.log('Ending call');
   if (currentCall) {
     currentCall.close();
     currentCall = null;
+  }
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
   }
   socket.emit('end-call', { to: username === 'Rav' ? 'Mon' : 'Rav' });
   callScreen.style.display = 'none';
+  localVideo.srcObject = null;
+  remoteVideo.srcObject = null;
   stopCallTimer();
   isCalling = false;
+  setTimeout(initPeer, 1000);
 }
 
 socket.on('call-ended', () => {
-  if (currentCall) {
-    currentCall.close();
-    currentCall = null;
-  }
-  callScreen.style.display = 'none';
-  stopCallTimer();
-  isCalling = false;
+  console.log('Call ended by peer');
+  endCall();
 });
 
 function startCallTimer() {
