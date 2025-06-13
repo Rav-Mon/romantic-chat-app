@@ -75,49 +75,26 @@ socket.on('login-failed', (message) => {
 });
 
 function initPeer() {
-  fetch('https://romantic-chat-backend.onrender.com/ice')
-    .then(res => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      return res.json();
-    })
-    .then(iceServers => {
-      console.log('ICE servers fetched:', iceServers);
-      peer = new Peer({
-        config: {
-          iceServers: [
-            ...iceServers,
-            { urls: 'stun:stun.l.google.com:19302' },
-            {
-              urls: 'turn:openrelay.metered.ca:443',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-            }
-          ]
-        },
-        secure: true,
-        debug: 3
-      });
-      setupPeer();
-    })
-    .catch(err => {
-      console.error('ICE fetch error:', err.message);
-      alert('Failed to fetch ICE servers. Using fallback.');
-      peer = new Peer({
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            {
-              urls: 'turn:openrelay.metered.ca:443',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-            }
-          ]
-        },
-        secure: true,
-        debug: 3
-      });
-      setupPeer();
-    });
+  const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ];
+  console.log('Using ICE servers:', iceServers);
+  peer = new Peer({
+    config: { iceServers },
+    secure: true,
+    debug: 3
+  });
+  setupPeer();
 }
 
 function setupPeer() {
