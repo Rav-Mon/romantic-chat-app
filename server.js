@@ -47,7 +47,6 @@ app.get('/ice', async (req, res) => {
     res.status(500).json({ error: 'Failed to get ICE servers' });
   }
 });
-
 const users = { 'Rav': null, 'Mon': null };
 const messages = [];
 
