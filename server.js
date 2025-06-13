@@ -8,11 +8,31 @@ const io = require('socket.io')(server, {
   }
 });
 const { v4: uuidv4 } = require('uuid');
+const axios = require('axios');
 
 app.use(express.static('public'));
 
 const users = { 'Rav': null, 'Mon': null };
 const messages = [];
+
+app.get('/ice', async (req, res) => {
+  try {
+    const response = await axios.put(
+      'https://global.xirsys.net/_turn/romantic-chat/default/rav-mon',
+      {},
+      {
+        auth: {
+          username: 'ravmon',
+          password: '73ed7774-4765-11f0-a911-0242ac150002'
+        }
+      }
+    );
+    res.json(response.data.v.iceServers);
+  } catch (err) {
+    console.error('Xirsys error:', err.message);
+    res.status(500).json({ error: 'Failed to get ICE servers' });
+  }
+});
 
 io.on('connection', socket => {
   console.log('Client connected:', socket.id);
@@ -59,38 +79,51 @@ io.on('connection', socket => {
   });
 
   socket.on('call-user', ({ to, type, offer }) => {
-    if (users[to] && users[to].connected) {
+    if (users[to] && users[to].connected && users[to].peerId) {
       io.to(users[to].id).emit('incoming-call', {
-        from: socket.id,
+        from: users[Object.keys(users).find(u => users[u].id === socket.id)].peerId,
         username: Object.keys(users).find(key => users[key].id === socket.id),
         type,
         offer
       });
+    } else {
+      socket.emit('call-failed', `User ${to} is not available`);
     }
   });
 
   socket.on('call-answer', ({ to, answer }) => {
-    if (users[to] && users[to].connected) {
-      io.to(users[to].id).emit('call-answered', { answer });
+    const toUser = Object.keys(users).find(u => users[u]?.peerId === to);
+    if (toUser && users[toUser] && users[toUser].connected) {
+      io.to(users[toUser].id).emit('call-answered', { answer });
     }
   });
 
   socket.on('ice-candidate', ({ to, candidate }) => {
-    if (users[to] && users[to].connected) {
-      io.to(users[to].id).emit('ice-candidate', { candidate });
+    const toUser = Object.keys(users).find(u => users[u]?.peerId === to);
+    if (toUser && users[toUser] && users[toUser].connected) {
+      io.to(users[toUser].id).emit('ice-candidate', { candidate });
     }
   });
 
   socket.on('accept-call', ({ to }) => {
-    io.to(to).emit('call-accepted');
+    const toUser = Object.keys(users).find(u => users[u]?.peerId === to);
+    if (toUser && users[toUser] && users[toUser].connected) {
+      io.to(users[toUser].id).emit('call-accepted');
+    }
   });
 
   socket.on('reject-call', ({ to }) => {
-    io.to(to).emit('call-rejected');
+    const toUser = Object.keys(users).find(u => users[u]?.peerId === to);
+    if (toUser && users[toUser] && users[toUser].connected) {
+      io.to(users[toUser].id).emit('call-rejected');
+    }
   });
 
   socket.on('end-call', ({ to }) => {
-    io.to(to).emit('call-ended');
+    const toUser = Object.keys(users).find(u => users[u]?.peerId === to);
+    if (toUser && users[toUser] && users[toUser].connected) {
+      io.to(users[toUser].id).emit('call-ended');
+    }
   });
 
   socket.on('profile-pic', ({ username, image }) => {
