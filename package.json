@@ -10,8 +10,7 @@
     "express": "^4.17.1",
     "socket.io": "^4.5.0",
     "uuid": "^9.0.0",
-    "axios": "^1.4.0",
-    "cors": "^2.8.5"
+    "axios": "^1.4.0"
   },
   "license": "UNLICENSED"
 }
