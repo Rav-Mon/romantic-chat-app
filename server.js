@@ -35,8 +35,8 @@ app.get('/ice', async (req, res) => {
       {},
       {
         auth: {
-          username: 'hBY1unBKVTVQuZgqUVlzMknf8MXs_eDK8_ms8A_EI19g6rM0QWqIrvM_fcyjn0LHAAAAAGhKlbByYXZtb24=",',
-          password: 'cd6dbfac-476a-11f0-88cb-0242ac140004'
+          username: 'ravmon',
+          password: 'ravi@#123'
         }
       }
     );
