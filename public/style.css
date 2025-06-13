@@ -1,272 +1,82 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+/* Custom styles for Rav ❤️ Mon's Romantic Chat */
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
-body {
-  background: #f0f0f0;
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  max-width: 100%;
-  background: #fff;
-}
-
-header {
-  background: #25D366;
-  color: #fff;
-  padding: 10px 15px;
-  display: flex;
-  align-items: center;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
-
-.header-content {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-#profile-pic {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  margin-right: 10px;
-  border: 2px solid #fff;
-}
-
-h1 {
-  font-size: 1.2em;
-  flex-grow: 1;
-}
-
-.user-status {
-  display: flex;
-  gap: 10px;
-  font-size: 1em;
-}
-
-#login-screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  gap: 10px;
-}
-
-#login-screen button {
-  background: #25D366;
-  color: #fff;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 20px;
-  cursor: pointer;
-  font-size: 1em;
-  transition: background 0.3s;
-}
-
-#login-screen button:hover {
-  background: #1da851;
-}
-
-#chat-screen {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-#messages {
-  flex: 1;
-  padding: 10px;
-  overflow-y: auto;
-  background: url('https://i.imgur.com/5Jq3Z8X.jpg') repeat; /* WhatsApp-like background */
-  background-size: cover;
+@keyframes glow {
+  0% { box-shadow: 0 0 5px rgba(0, 255, 255, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(0, 255, 255, 0.8); }
+  100% { box-shadow: 0 0 5px rgba(0, 255, 255, 0.5); }
 }
 
 .message {
   max-width: 70%;
-  margin: 5px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  position: relative;
+  margin: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  animation: slideIn 0.3s ease-out;
 }
 
 .message.me {
-  background: #DCF8C6;
+  background: linear-gradient(to right, #4fd1c5, #38b2ac);
+  color: white;
   margin-left: auto;
-  border-bottom-right-radius: 2px;
+  border-bottom-right-radius: 0;
 }
 
 .message.other {
-  background: #fff;
-  border-bottom-left-radius: 2px;
+  background: linear-gradient(to right, #e2e8f0, #cbd5e0);
+  color: black;
+  margin-right: auto;
+  border-bottom-left-radius: 0;
 }
 
-.message p {
-  font-size: 0.9em;
+.message:hover {
+  animation: glow 1.5s infinite;
 }
 
 .timestamp {
-  font-size: 0.7em;
-  color: #666;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
   text-align: right;
-  margin-top: 5px;
 }
 
-.delete {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  cursor: pointer;
-  color: #f44336;
-  font-size: 0.8em;
+.message.other .timestamp {
+  color: rgba(0, 0, 0, 0.6);
 }
 
 .file-link {
-  color: #25D366;
-  text-decoration: none;
-  font-size: 0.9em;
+  color: #3182ce;
+  text-decoration: underline;
   display: block;
-  margin-top: 5px;
+  margin-top: 0.5rem;
 }
 
-.input-area {
-  display: flex;
-  align-items: center;
-  padding: 10px;
-  background: #f0f0f0;
-  border-top: 1px solid #ddd;
-}
-
-.file-label {
-  font-size: 1.2em;
+.delete {
   cursor: pointer;
-  margin-right: 10px;
-  color: #25D366;
+  color: #e53e3e;
+  margin-left: 0.5rem;
+  font-size: 0.875rem;
 }
 
-#message-input {
-  flex: 1;
-  padding: 8px;
-  border: none;
-  border-radius: 20px;
-  background: #fff;
-  font-size: 0.9em;
+.delete:hover {
+  color: #c53030;
 }
 
-.input-area button {
-  background: #25D366;
-  color: #fff;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 50%;
-  cursor: pointer;
-  margin-left: 10px;
-  font-size: 1em;
+#messages {
+  background: linear-gradient(to bottom, #f7fafc, #edf2f7);
 }
 
-.call-controls {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 10px;
-  background: #f0f0f0;
-}
-
-.call-controls button {
-  background: #25D366;
-  color: #fff;
-  border: none;
-  padding: 8px 15px;
-  border-radius: 20px;
-  cursor: pointer;
-  font-size: 0.9em;
-}
-
-#call-screen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: #128C7E;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+#call-screen, #incoming-call {
   z-index: 1000;
 }
 
-video {
-  width: 45%;
-  max-width: 200px;
-  border-radius: 10px;
-  margin: 5px;
-  border: 2px solid #fff;
+#local-video, #remote-video {
+  background: #1a202c;
 }
 
-#call-timer {
-  color: #fff;
-  font-size: 1.2em;
-  margin: 10px;
-}
-
-#call-screen button {
-  background: #f44336;
-  color: #fff;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 20px;
-  cursor: pointer;
-}
-
-#incoming-call {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: #fff;
-  padding: 20px;
-  border-radius: 10px;
-  text-align: center;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
-}
-
-#incoming-call p {
-  font-size: 1em;
-  margin-bottom: 10px;
-}
-
-#incoming-call button {
-  background: #25D366;
-  color: #fff;
-  border: none;
-  padding: 8px 15px;
-  border-radius: 20px;
-  cursor: pointer;
-  margin: 5px;
-}
-
-#incoming-call button.reject {
-  background: #f44336;
-}
-
-@media (max-width: 600px) {
-  header { padding: 8px; }
-  h1 { font-size: 1em; }
-  #profile-pic { width: 30px; height: 30px; }
-  video { width: 100%; max-width: 150px; }
-  .message { max-width: 85%; }
-  .input-area { padding: 8px; }
-  #message-input { font-size: 0.8em; }
+button:hover i {
+  transform: scale(1.1);
+  transition: transform 0.2s;
 }
