@@ -7,9 +7,14 @@ const io = require('socket.io')(server, {
     methods: ['GET', 'POST']
   }
 });
+const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
 
+app.use(cors({
+  origin: 'https://romantic-chat-frontend.onrender.com',
+  methods: ['GET', 'PUT']
+}));
 app.use(express.static('public'));
 
 const users = { 'Rav': null, 'Mon': null };
@@ -22,8 +27,8 @@ app.get('/ice', async (req, res) => {
       {},
       {
         auth: {
-          username: 'ravmon',
-          password: '73ed7774-4765-11f0-a911-0242ac150002'
+          username: 'YOUR_XIRSYS_IDENT',
+          password: 'YOUR_XIRSYS_SECRET'
         }
       }
     );
