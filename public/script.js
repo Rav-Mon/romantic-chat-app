@@ -73,28 +73,56 @@ socket.on('login-failed', (message) => {
   showConnecting(false);
   alert(message || 'Login failed!');
 });
-
 function initPeer() {
-  const iceServers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ];
-  console.log('Using ICE servers:', iceServers);
-  peer = new Peer({
-    config: { iceServers },
-    secure: true,
-    debug: 3
-  });
-  setupPeer();
+  if (peer) {
+    peer.destroy();
+    peer = null;
+  }
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+  fetch('https://romantic-chat-app.onrender.com/ice', { method: 'GET' })
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      return res.json();
+    })
+    .then(iceServers => {
+      console.log('ICE servers fetched:', iceServers);
+      const allIceServers = [
+        ...iceServers,
+        { urls: 'stun:stun.l.google.com:19302' },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:numb.viagenie.ca:3478',
+          username: 'webrtc@live.com',
+          credential: 'muazkh'
+        }
+      ];
+      setupPeer(allIceServers);
+    })
+    .catch(err => {
+      console.error('ICE fetch error:', err.message);
+      alert('Failed to fetch ICE servers. Using fallback.');
+      const fallbackIceServers = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:numb.viagenie.ca:3478',
+          username: 'webrtc@live.com',
+          credential: 'muazkh'
+        }
+      ];
+      setupPeer(fallbackIceServers);
+    });
 }
 
 function setupPeer() {
