@@ -4,40 +4,52 @@ const server = require('http').createServer(app);
 const io = require('socket.io')(server, {
   cors: {
     origin: 'https://romantic-chat-frontend.onrender.com',
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
-const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
 
-app.use(cors({
-  origin: 'https://romantic-chat-frontend.onrender.com',
-  methods: ['GET', 'PUT']
-}));
 app.use(express.static('public'));
 
-const users = { 'Rav': null, 'Mon': null };
-const messages = [];
+// Manual CORS middleware
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://romantic-chat-frontend.onrender.com');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS request for:', req.url);
+    return res.status(200).end();
+  }
+  console.log(`Request: ${req.method} ${req.url}`);
+  next();
+});
 
 app.get('/ice', async (req, res) => {
   try {
+    console.log('Fetching ICE servers from Xirsys');
     const response = await axios.put(
       'https://global.xirsys.net/_turn/romantic-chat/default/rav-mon',
       {},
       {
         auth: {
-          username: 'ravmon',
-          password: '73ed7774-4765-11f0-a911-0242ac150002'
+          username: 'YOUR_XIRSYS_IDENT',
+          password: 'YOUR_XIRSYS_SECRET'
         }
       }
     );
+    console.log('ICE servers fetched:', response.data.v.iceServers);
     res.json(response.data.v.iceServers);
   } catch (err) {
     console.error('Xirsys error:', err.message);
     res.status(500).json({ error: 'Failed to get ICE servers' });
   }
 });
+
+const users = { 'Rav': null, 'Mon': null };
+const messages = [];
 
 io.on('connection', socket => {
   console.log('Client connected:', socket.id);
