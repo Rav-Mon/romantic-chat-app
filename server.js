@@ -36,7 +36,7 @@ app.get('/ice', async (req, res) => {
       {
         auth: {
           username: 'ravmon',
-          password: 'ravi@#123'
+          password: '73ed7774-4765-11f0-a911-0242ac150002'
         }
       }
     );
